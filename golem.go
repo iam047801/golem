@@ -14,15 +14,17 @@ type LanguagePack interface {
 
 // Lemmatizer is the key to lemmatizing a word in a language
 type Lemmatizer struct {
-	m map[string]int
-	v [][]string
+	m     map[string]int
+	v     [][]string
+	heads map[string]struct{}
 }
 
 func newLemmatizerFromBytes(b []byte) (Lemmatizer, error) {
 	lines := strings.Split(string(b), "\n")
 	s := Lemmatizer{
-		m: make(map[string]int),
-		v: [][]string{},
+		m:     make(map[string]int),
+		v:     [][]string{},
+		heads: make(map[string]struct{}),
 	}
 	// TODO: Would it be better to do with a reader
 	// instead of loading the full thing into an array?
@@ -40,9 +42,12 @@ func newLemmatizerFromBytes(b []byte) (Lemmatizer, error) {
 			return s, fmt.Errorf("expected more than 1 form per word")
 		}
 		base := words[0]
+		s.heads[base] = struct{}{}
 		for _, word := range words {
 			if index, ok := s.m[word]; ok {
-				s.v[index] = append(s.v[index], word)
+				if !contains(s.v[index], base) {
+					s.v[index] = append(s.v[index], base)
+				}
 			} else {
 				index := len(s.v)
 				s.v = append(s.v, []string{base})
@@ -51,6 +56,15 @@ func newLemmatizerFromBytes(b []byte) (Lemmatizer, error) {
 		}
 	}
 	return s, nil
+}
+
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // New produces a new Lemmatizer
@@ -92,10 +106,21 @@ func (l *Lemmatizer) LemmaLower(word string) string {
 // Lemmas gets all the base forms of a word, if multiple exist
 func (l *Lemmatizer) Lemmas(word string) (out []string) {
 	if index, ok := l.m[strings.ToLower(word)]; ok {
-		out := l.v[index]
-		// to get rid of the randomness, we sort the output
+		out := append([]string(nil), l.v[index]...)
 		sort.Strings(out)
 		return out
 	}
 	return []string{word}
+}
+
+// IsLemma reports whether word heads a paradigm in the dictionary, i.e. it is
+// a base form in its own right even if it also inflects another base
+func (l *Lemmatizer) IsLemma(word string) bool {
+	return l.IsLemmaLower(strings.ToLower(word))
+}
+
+// IsLemmaLower is IsLemma for a word that is already lowercased
+func (l *Lemmatizer) IsLemmaLower(word string) bool {
+	_, ok := l.heads[word]
+	return ok
 }
